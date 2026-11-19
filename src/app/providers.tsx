@@ -2,6 +2,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthContext } from "@/features/auth/hooks/auth-context";
 import { useAuth } from "@/features/auth/hooks/use-auth";
+import { usePendoIdentity } from "@/features/auth/hooks/use-pendo-identity";
 
 interface ProvidersProps {
   children: React.ReactNode;
@@ -9,6 +10,7 @@ interface ProvidersProps {
 
 function AuthProvider({ children }: ProvidersProps) {
   const auth = useAuth();
+  usePendoIdentity(auth.user, auth.workspace);
   return <AuthContext.Provider value={auth}>{children}</AuthContext.Provider>;
 }
 

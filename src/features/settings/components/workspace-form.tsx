@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { updateWorkspace } from "@/lib/db/repositories/workspaces.repo";
 import { useAuthContext } from "@/features/auth/hooks/auth-context";
+import { trackEvent } from "@/lib/pendo";
 import type { Workspace } from "@/types";
 
 const workspaceSchema = z.object({
@@ -65,6 +66,13 @@ export function WorkspaceForm() {
       const updated: Workspace = { ...workspace, ...values };
       await updateWorkspace(updated);
       setActiveWorkspace(updated);
+      trackEvent("workspace_settings_updated", {
+        previousCurrency: workspace.currency,
+        currency: updated.currency,
+        previousLocale: workspace.locale,
+        locale: updated.locale,
+        nameChanged: updated.name !== workspace.name,
+      });
       toast.success("Workspace settings saved");
     } catch {
       toast.error("Failed to save workspace settings");

@@ -4,6 +4,7 @@ import { BpBox } from "@/shared/components/bp-box";
 import { createWorkspace } from "@/lib/db/repositories/workspaces.repo";
 import { seedDefaultCategories } from "@/lib/db/repositories/categories.repo";
 import { useAuthContext } from "@/features/auth/hooks/auth-context";
+import { trackEvent } from "@/lib/pendo";
 import { WorkspaceSetupForm, type WorkspaceFormValues } from "../components/workspace-setup-form";
 import type { Workspace } from "@/types";
 
@@ -25,6 +26,12 @@ export function WorkspaceSetupPage() {
       await createWorkspace(workspace);
       await seedDefaultCategories(workspace.id);
       setActiveWorkspace(workspace);
+      // End of onboarding: workspace saved and default categories seeded.
+      trackEvent("workspace_created", {
+        workspaceId: workspace.id,
+        currency: workspace.currency,
+        locale: workspace.locale,
+      });
       navigate("/", { replace: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create workspace");

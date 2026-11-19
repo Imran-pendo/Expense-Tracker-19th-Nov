@@ -4,6 +4,7 @@ import { createTransaction, getTransactionsByWorkspaceId } from "@/lib/db/reposi
 import { getCategoriesByWorkspaceId } from "@/lib/db/repositories/categories.repo";
 import { notifyBudgetThreshold } from "@/features/transactions/hooks/use-transactions";
 import { emitDataChanged } from "@/shared/lib/data-events";
+import { trackEvent } from "@/lib/pendo";
 import { parseQuickAdd, type ParsedQuickAdd } from "../lib/parser";
 import type { Category, Transaction } from "@/types";
 
@@ -81,6 +82,16 @@ export function useQuickAdd(workspaceId: string, open: boolean): UseQuickAddRetu
       };
       await createTransaction(tx);
       await notifyBudgetThreshold(workspaceId, tx, transactions, categories);
+      // Quick Add saves on Enter, so the outcome is tracked here instead of a click.
+      trackEvent("quick_add_transaction_created", {
+        type: tx.type,
+        amount: tx.amount,
+        categoryId: tx.categoryId,
+        categoryGuessed: parsed.categoryGuessed,
+        categoryOverridden: overrideCategory !== null && overrideCategory.id !== parsed.category?.id,
+        hasDescription: parsed.description.trim().length > 0,
+        date: tx.date,
+      });
       // Keep local history fresh so the next entry's inference sees this one.
       setTransactions((prev) => [tx, ...prev]);
       setInput("");

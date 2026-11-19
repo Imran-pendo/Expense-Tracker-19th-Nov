@@ -5,6 +5,7 @@ import {
   deleteAttachment,
   getAttachmentsByTransactionId,
 } from "@/lib/db/repositories/attachments.repo";
+import { trackEvent } from "@/lib/pendo";
 import type { Attachment } from "@/types";
 
 export const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB per file
@@ -65,13 +66,17 @@ export function useAttachments(workspaceId: string, transactionId: string | null
   const addFiles = useCallback(
     async (files: FileList | File[]) => {
       let count = totalCount;
+      let rejectedCount = 0;
+      const acceptedFiles: File[] = [];
       for (const file of Array.from(files)) {
         const error = validateFile(file, count);
         if (error) {
           toast.error(error);
+          rejectedCount++;
           continue;
         }
         count++;
+        acceptedFiles.push(file);
         if (transactionId) {
           await createAttachment({
             id: crypto.randomUUID(),
@@ -88,6 +93,17 @@ export function useAttachments(workspaceId: string, transactionId: string | null
         }
       }
       if (transactionId) await reload();
+      // One event per file selection, after every file is saved, staged, or rejected.
+      if (acceptedFiles.length + rejectedCount > 0) {
+        trackEvent("receipt_attached", {
+          acceptedCount: acceptedFiles.length,
+          rejectedCount,
+          mimeTypes: Array.from(new Set(acceptedFiles.map((f) => f.type))),
+          totalSize: acceptedFiles.reduce((sum, f) => sum + f.size, 0),
+          isStaged: !transactionId,
+          transactionId,
+        });
+      }
     },
     [workspaceId, transactionId, totalCount, reload]
   );

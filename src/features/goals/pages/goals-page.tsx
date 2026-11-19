@@ -6,6 +6,7 @@ import { BpBox } from "@/shared/components/bp-box";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthContext } from "@/features/auth/hooks/auth-context";
+import { trackEvent } from "@/lib/pendo";
 import { useGoals } from "../hooks/use-goals";
 import { GoalCard } from "../components/goal-card";
 import { GoalFormDialog } from "../components/goal-form";
@@ -34,6 +35,13 @@ export function GoalsPage() {
         targetAmount: values.targetAmount,
         deadline: values.deadline || undefined,
         color: values.color,
+      });
+      trackEvent("goal_created", {
+        targetAmount: values.targetAmount,
+        hasDeadline: Boolean(values.deadline),
+        deadline: values.deadline || null,
+        // `goals` still holds the list from before this goal was added.
+        goalCount: goals.length + 1,
       });
       setShowForm(false);
       toast.success("Goal created");
@@ -66,6 +74,19 @@ export function GoalsPage() {
         amount: values.amount,
         date: values.date,
         note: values.note || undefined,
+      });
+      const previousSaved = contributingGoal.contributions.reduce((sum, c) => sum + c.amount, 0);
+      const totalSaved = previousSaved + values.amount;
+      const { targetAmount } = contributingGoal;
+      trackEvent("goal_contribution_added", {
+        goalId: contributingGoal.id,
+        amount: values.amount,
+        targetAmount,
+        totalSaved,
+        progressPercent: targetAmount > 0 ? Math.round((totalSaved / targetAmount) * 100) : 0,
+        // True only for the contribution that reaches the target.
+        goalCompleted: previousSaved < targetAmount && totalSaved >= targetAmount,
+        contributionCount: contributingGoal.contributions.length + 1,
       });
       setContributingGoal(null);
       toast.success("Contribution added");

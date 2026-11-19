@@ -59,6 +59,32 @@ export function useAuth(): AuthState & AuthActions {
     loadSession();
   }, [loadSession]);
 
+  // Identify the signed-in visitor and their active workspace in Pendo. Runs after
+  // sign-in, sign-up, session restore, workspace changes, and profile updates.
+  useEffect(() => {
+    if (!user) return;
+
+    pendo.identify({
+      visitor: {
+        id: user.id,
+        full_name: user.displayName,
+        username: user.username,
+        displayName: user.displayName,
+        createdAt: user.createdAt,
+        workspaceId: getSession()?.workspaceId ?? workspace?.id ?? "",
+      },
+      ...(workspace && {
+        account: {
+          id: workspace.id,
+          name: workspace.name,
+          currency: workspace.currency,
+          locale: workspace.locale,
+          createdAt: workspace.createdAt,
+        },
+      }),
+    });
+  }, [user, workspace]);
+
   const signUp = useCallback(async (username: string, displayName: string, password: string) => {
     const existing = await getUserByUsername(username);
     if (existing) throw new Error("Username is already taken");
@@ -108,6 +134,7 @@ export function useAuth(): AuthState & AuthActions {
 
   const signOut = useCallback(() => {
     clearSession();
+    pendo.clearSession?.();
     setUser(null);
     setWorkspace(null);
   }, []);

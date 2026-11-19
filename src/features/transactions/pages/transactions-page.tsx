@@ -12,6 +12,7 @@ import { TransactionFiltersBar, type TransactionFilters } from "../components/tr
 import { DeleteTransactionDialog } from "../components/delete-transaction-dialog";
 import { useAttachments } from "../hooks/use-attachments";
 import { getAttachmentCounts } from "@/lib/db/repositories/attachments.repo";
+import { trackEvent } from "@/lib/analytics";
 import type { TransactionWithCategory } from "../hooks/use-transactions";
 import type { TransactionFormValues } from "../schemas/transaction.schema";
 import type { Transaction } from "@/types";
@@ -71,7 +72,18 @@ export function TransactionsPage() {
   async function handleAdd(values: TransactionFormValues) {
     try {
       const created = await addTransaction({ ...values, workspaceId: workspace!.id, notes: values.notes ?? "" });
+      const attachmentCount = addAttachments.stagedFiles.length;
       await addAttachments.flushStaged(created.id);
+      trackEvent("transaction_created", {
+        type: created.type,
+        amount: created.amount,
+        categoryId: created.categoryId,
+        categoryName: categories.find((c) => c.id === created.categoryId)?.name ?? "Uncategorized",
+        isRecurring: created.isRecurring,
+        hasNotes: created.notes.trim().length > 0,
+        attachmentCount,
+        source: "transaction_form",
+      });
       setShowForm(false);
       toast.success("Transaction added");
     } catch {
@@ -89,6 +101,14 @@ export function TransactionsPage() {
         date: values.date,
       };
       await editTransaction(updated);
+      trackEvent("transaction_updated", {
+        transactionId: updated.id,
+        type: updated.type,
+        typeChanged: updated.type !== editingTx.type,
+        categoryChanged: updated.categoryId !== editingTx.categoryId,
+        amountChanged: updated.amount !== editingTx.amount,
+        isRecurring: updated.isRecurring,
+      });
       setEditingTx(null);
       await refreshAttachmentCounts();
       toast.success("Transaction updated");

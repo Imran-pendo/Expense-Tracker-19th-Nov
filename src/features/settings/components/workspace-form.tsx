@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { updateWorkspace } from "@/lib/db/repositories/workspaces.repo";
+import { trackEvent } from "@/lib/analytics";
 import { useAuthContext } from "@/features/auth/hooks/auth-context";
 import type { Workspace } from "@/types";
 
@@ -64,6 +65,14 @@ export function WorkspaceForm() {
     try {
       const updated: Workspace = { ...workspace, ...values };
       await updateWorkspace(updated);
+      trackEvent("workspace_settings_updated", {
+        workspaceId: updated.id,
+        currency: updated.currency,
+        locale: updated.locale,
+        currencyChanged: updated.currency !== workspace.currency,
+        localeChanged: updated.locale !== workspace.locale,
+        nameChanged: updated.name !== workspace.name,
+      });
       setActiveWorkspace(updated);
       toast.success("Workspace settings saved");
     } catch {

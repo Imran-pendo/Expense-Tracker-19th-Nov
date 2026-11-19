@@ -10,6 +10,7 @@ import { getCategoriesByWorkspaceId } from "@/lib/db/repositories/categories.rep
 import { getBudgetsByWorkspaceId } from "@/lib/db/repositories/budgets.repo";
 import { checkBudgetThresholds } from "@/features/budgets/lib/budget-alerts";
 import { useDataChanged } from "@/shared/lib/data-events";
+import { trackEvent } from "@/lib/analytics";
 import type { Category, Transaction } from "@/types";
 
 export async function notifyBudgetThreshold(
@@ -24,6 +25,16 @@ export async function notifyBudgetThreshold(
   if (!alert) return;
   const categoryName = categories.find((c) => c.id === alert.categoryId)?.name ?? "Category";
   const percent = Math.round((alert.spent / alert.monthlyLimit) * 100);
+  // checkBudgetThresholds only returns an alert when a boundary is newly
+  // crossed, so this fires once per crossing.
+  trackEvent("budget_threshold_crossed", {
+    categoryId: alert.categoryId,
+    categoryName,
+    level: alert.level,
+    percent,
+    spent: alert.spent,
+    monthlyLimit: alert.monthlyLimit,
+  });
   if (alert.level === "over") {
     toast.error(`Budget exceeded: ${categoryName} is at ${percent}% of its monthly limit`);
   } else {

@@ -5,6 +5,7 @@ import {
   deleteAttachment,
   getAttachmentsByTransactionId,
 } from "@/lib/db/repositories/attachments.repo";
+import { trackEvent } from "@/lib/analytics";
 import type { Attachment } from "@/types";
 
 export const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB per file
@@ -64,14 +65,19 @@ export function useAttachments(workspaceId: string, transactionId: string | null
 
   const addFiles = useCallback(
     async (files: FileList | File[]) => {
-      let count = totalCount;
-      for (const file of Array.from(files)) {
-        const error = validateFile(file, count);
+      const allFiles = Array.from(files);
+      const accepted: File[] = [];
+      for (const file of allFiles) {
+        const error = validateFile(file, totalCount + accepted.length);
         if (error) {
           toast.error(error);
           continue;
         }
-        count++;
+        accepted.push(file);
+      }
+      const rejectedCount = allFiles.length - accepted.length;
+
+      for (const [index, file] of accepted.entries()) {
         if (transactionId) {
           await createAttachment({
             id: crypto.randomUUID(),
@@ -86,6 +92,14 @@ export function useAttachments(workspaceId: string, transactionId: string | null
         } else {
           setStagedFiles((prev) => [...prev, { id: crypto.randomUUID(), file }]);
         }
+        // One event per file that passed validation, saved or staged.
+        trackEvent("receipt_attached", {
+          mimeType: file.type,
+          size: file.size,
+          isStaged: !transactionId,
+          totalCount: totalCount + index + 1,
+          rejectedCount,
+        });
       }
       if (transactionId) await reload();
     },

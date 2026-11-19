@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { runBot, type BotProgress, type BotConfig } from "../lib/bot-runner";
 import { AbortError } from "../lib/dom-helpers";
+import { trackEvent } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,17 +30,32 @@ export function BotPage() {
 
     const config: BotConfig = { totalActions };
 
+    // Count log entries for this run locally: `logs` state is stale inside this closure.
+    let logCount = 0;
+    let errorCount = 0;
+    const log = (p: BotProgress) => {
+      logCount++;
+      if (p.type === "error") errorCount++;
+      appendLog(p);
+    };
+    const trackRunFinished = (outcome: "completed" | "stopped" | "failed") => {
+      trackEvent("bot_run_finished", { totalActions, outcome, errorCount, logCount });
+    };
+
     try {
-      await runBot(iframeRef.current, config, appendLog, abortRef);
+      await runBot(iframeRef.current, config, log, abortRef);
       setRunState("done");
+      trackRunFinished("completed");
     } catch (err) {
       if (err instanceof AbortError) {
-        appendLog({ type: "info", message: "Bot stopped by user." });
+        log({ type: "info", message: "Bot stopped by user." });
         setRunState("stopped");
+        trackRunFinished("stopped");
       } else {
         const msg = err instanceof Error ? err.message : String(err);
-        appendLog({ type: "error", message: `Fatal error: ${msg}` });
+        log({ type: "error", message: `Fatal error: ${msg}` });
         setRunState("done");
+        trackRunFinished("failed");
       }
     }
   }

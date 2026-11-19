@@ -1,6 +1,8 @@
 import { Link, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { BpBox } from "@/shared/components/bp-box";
+import { trackEvent } from "@/lib/analytics";
+import { getSession } from "@/lib/session";
 import { useAuthContext } from "../hooks/auth-context";
 import { SignUpForm } from "../components/sign-up-form";
 import type { SignUpFormValues } from "../schemas/auth.schema";
@@ -12,6 +14,11 @@ export function SignUpPage() {
   async function handleSignUp(values: SignUpFormValues) {
     try {
       await signUp(values.username, values.displayName, values.password);
+      // Successful sign-up only: a taken username throws before this point.
+      trackEvent("account_created", {
+        userId: getSession()?.userId ?? "",
+        createdAt: new Date().toISOString(),
+      });
       navigate("/setup-workspace", { replace: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sign up failed");

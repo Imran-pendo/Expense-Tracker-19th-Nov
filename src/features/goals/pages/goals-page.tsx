@@ -1,18 +1,25 @@
 import { useState } from "react";
+import { differenceInCalendarDays } from "date-fns";
 import { Plus, Target } from "lucide-react";
 import { toast } from "sonner";
 import { AppLayout } from "@/shared/components/app-layout";
 import { BpBox } from "@/shared/components/bp-box";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { trackEvent } from "@/lib/analytics";
 import { useAuthContext } from "@/features/auth/hooks/auth-context";
 import { useGoals } from "../hooks/use-goals";
+import { projectGoal } from "../lib/goal-projection";
 import { GoalCard } from "../components/goal-card";
 import { GoalFormDialog } from "../components/goal-form";
 import { ContributionFormDialog } from "../components/contribution-form";
 import { DeleteGoalDialog } from "../components/delete-goal-dialog";
 import type { GoalFormValues, ContributionFormValues } from "../schemas/goal.schema";
 import type { Goal } from "@/types";
+
+// Module-level so goal_completed fires once per goal for the browser session,
+// even if the page unmounts and remounts.
+const completedGoalIds = new Set<string>();
 
 export function GoalsPage() {
   const { workspace } = useAuthContext();
@@ -34,6 +41,11 @@ export function GoalsPage() {
         targetAmount: values.targetAmount,
         deadline: values.deadline || undefined,
         color: values.color,
+      });
+      trackEvent("goal_created", {
+        targetAmount: values.targetAmount,
+        hasDeadline: !!values.deadline,
+        deadline: values.deadline || "",
       });
       setShowForm(false);
       toast.success("Goal created");
@@ -62,11 +74,43 @@ export function GoalsPage() {
   async function handleContribute(values: ContributionFormValues) {
     if (!contributingGoal) return;
     try {
-      await contribute(contributingGoal.id, {
+      const contribution = {
         amount: values.amount,
         date: values.date,
         note: values.note || undefined,
+      };
+      await contribute(contributingGoal.id, contribution);
+
+      const before = projectGoal(contributingGoal);
+      const updatedGoal: Goal = {
+        ...contributingGoal,
+        contributions: [...contributingGoal.contributions, { ...contribution, id: "" }],
+      };
+      const after = projectGoal(updatedGoal);
+      trackEvent("goal_contribution_added", {
+        goalId: updatedGoal.id,
+        amount: values.amount,
+        hasNote: !!values.note,
+        contributionCount: updatedGoal.contributions.length,
+        savedTotal: after.saved,
+        progressRatio: after.ratio,
+        targetAmount: updatedGoal.targetAmount,
       });
+      // Milestone: this contribution moved the goal from incomplete to complete.
+      if (!before.isComplete && after.isComplete && !completedGoalIds.has(updatedGoal.id)) {
+        completedGoalIds.add(updatedGoal.id);
+        trackEvent("goal_completed", {
+          goalId: updatedGoal.id,
+          targetAmount: updatedGoal.targetAmount,
+          contributionCount: updatedGoal.contributions.length,
+          daysToComplete: differenceInCalendarDays(new Date(), new Date(updatedGoal.createdAt)),
+          hadDeadline: !!updatedGoal.deadline,
+          completedBeforeDeadline: updatedGoal.deadline
+            ? new Date(values.date) <= new Date(updatedGoal.deadline)
+            : false,
+        });
+      }
+
       setContributingGoal(null);
       toast.success("Contribution added");
     } catch {

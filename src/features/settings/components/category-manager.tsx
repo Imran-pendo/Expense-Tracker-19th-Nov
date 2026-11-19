@@ -23,6 +23,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { createCategory, deleteCategory, updateCategory } from "@/lib/db/repositories/categories.repo";
+import { trackEvent } from "@/lib/analytics";
 import { useAuthContext } from "@/features/auth/hooks/auth-context";
 import { useCategories } from "../hooks/use-settings";
 import type { Category, CategoryScope } from "@/types";
@@ -158,6 +159,11 @@ export function CategoryManager() {
         isDefault: false,
       };
       await createCategory(cat);
+      trackEvent("category_created", {
+        categoryId: cat.id,
+        scope: cat.scope,
+        totalCategories: categories.length + 1,
+      });
       await reload();
       setShowForm(false);
       toast.success("Category added");

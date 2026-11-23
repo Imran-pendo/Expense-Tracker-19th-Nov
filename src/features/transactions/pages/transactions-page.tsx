@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { AppLayout } from "@/shared/components/app-layout";
@@ -12,9 +12,12 @@ import { TransactionFiltersBar, type TransactionFilters } from "../components/tr
 import { DeleteTransactionDialog } from "../components/delete-transaction-dialog";
 import { useAttachments } from "../hooks/use-attachments";
 import { getAttachmentCounts } from "@/lib/db/repositories/attachments.repo";
+import { trackEvent } from "@/lib/analytics";
 import type { TransactionWithCategory } from "../hooks/use-transactions";
 import type { TransactionFormValues } from "../schemas/transaction.schema";
 import type { Transaction } from "@/types";
+
+const SEARCH_TRACK_DEBOUNCE_MS = 800;
 
 export function TransactionsPage() {
   const { workspace } = useAuthContext();
@@ -68,10 +71,50 @@ export function TransactionsPage() {
     });
   }, [transactions, filters]);
 
+  // Latest result counts, read by the debounced search tracker so it reports
+  // what the visitor sees once they stop typing.
+  const searchResultCountsRef = useRef({ resultsCount: 0, totalCount: 0 });
+  useEffect(() => {
+    searchResultCountsRef.current = {
+      resultsCount: filteredTransactions.length,
+      totalCount: transactions.length,
+    };
+  }, [filteredTransactions, transactions]);
+
+  // Filters apply on every keystroke, so record one search per pause in input.
+  // Only filter changes re-arm the timer, and the default (empty) filter set
+  // isn't a search.
+  useEffect(() => {
+    const hasActiveFilters =
+      filters.search.trim() !== "" || filters.type !== "all" || filters.categoryId !== "" || filters.month !== "";
+    if (!hasActiveFilters) return;
+    const timer = setTimeout(() => {
+      trackEvent("transactions_searched", {
+        searchLength: filters.search.trim().length,
+        type: filters.type,
+        categoryId: filters.categoryId || null,
+        month: filters.month || null,
+        resultsCount: searchResultCountsRef.current.resultsCount,
+        totalCount: searchResultCountsRef.current.totalCount,
+      });
+    }, SEARCH_TRACK_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [filters]);
+
   async function handleAdd(values: TransactionFormValues) {
     try {
+      const attachmentCount = addAttachments.stagedFiles.length;
       const created = await addTransaction({ ...values, workspaceId: workspace!.id, notes: values.notes ?? "" });
       await addAttachments.flushStaged(created.id);
+      trackEvent("transaction_added", {
+        type: created.type,
+        amount: created.amount,
+        categoryId: created.categoryId,
+        isRecurring: created.isRecurring,
+        hasNotes: created.notes.trim() !== "",
+        attachmentCount,
+        source: "transaction_form",
+      });
       setShowForm(false);
       toast.success("Transaction added");
     } catch {
@@ -89,6 +132,14 @@ export function TransactionsPage() {
         date: values.date,
       };
       await editTransaction(updated);
+      trackEvent("transaction_updated", {
+        type: updated.type,
+        categoryId: updated.categoryId,
+        amountChanged: updated.amount !== editingTx.amount,
+        categoryChanged: updated.categoryId !== editingTx.categoryId,
+        typeChanged: updated.type !== editingTx.type,
+        isRecurring: updated.isRecurring,
+      });
       setEditingTx(null);
       await refreshAttachmentCounts();
       toast.success("Transaction updated");

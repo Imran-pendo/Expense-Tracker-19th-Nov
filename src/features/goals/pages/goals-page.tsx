@@ -6,6 +6,7 @@ import { BpBox } from "@/shared/components/bp-box";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuthContext } from "@/features/auth/hooks/auth-context";
+import { trackEvent } from "@/lib/analytics";
 import { useGoals } from "../hooks/use-goals";
 import { GoalCard } from "../components/goal-card";
 import { GoalFormDialog } from "../components/goal-form";
@@ -35,6 +36,11 @@ export function GoalsPage() {
         deadline: values.deadline || undefined,
         color: values.color,
       });
+      trackEvent("savings_goal_created", {
+        targetAmount: values.targetAmount,
+        hasDeadline: !!values.deadline,
+        goalCount: goals.length + 1,
+      });
       setShowForm(false);
       toast.success("Goal created");
     } catch {
@@ -62,10 +68,20 @@ export function GoalsPage() {
   async function handleContribute(values: ContributionFormValues) {
     if (!contributingGoal) return;
     try {
-      await contribute(contributingGoal.id, {
+      const updated = await contribute(contributingGoal.id, {
         amount: values.amount,
         date: values.date,
         note: values.note || undefined,
+      });
+      const totalSaved = updated.contributions.reduce((sum, c) => sum + c.amount, 0);
+      trackEvent("goal_contribution_added", {
+        goalId: updated.id,
+        amount: values.amount,
+        totalSaved,
+        targetAmount: updated.targetAmount,
+        percentComplete: updated.targetAmount > 0 ? Math.round((totalSaved / updated.targetAmount) * 100) : 0,
+        contributionCount: updated.contributions.length,
+        hasNote: !!values.note,
       });
       setContributingGoal(null);
       toast.success("Contribution added");

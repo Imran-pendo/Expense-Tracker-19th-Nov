@@ -4,6 +4,7 @@ import { BpBox } from "@/shared/components/bp-box";
 import { createWorkspace } from "@/lib/db/repositories/workspaces.repo";
 import { seedDefaultCategories } from "@/lib/db/repositories/categories.repo";
 import { useAuthContext } from "@/features/auth/hooks/auth-context";
+import { trackEvent } from "@/lib/analytics";
 import { WorkspaceSetupForm, type WorkspaceFormValues } from "../components/workspace-setup-form";
 import type { Workspace } from "@/types";
 
@@ -24,6 +25,12 @@ export function WorkspaceSetupPage() {
       };
       await createWorkspace(workspace);
       await seedDefaultCategories(workspace.id);
+      // Onboarding completes once the workspace and its default categories exist.
+      trackEvent("workspace_created", {
+        workspaceId: workspace.id,
+        currency: workspace.currency,
+        locale: workspace.locale,
+      });
       setActiveWorkspace(workspace);
       navigate("/", { replace: true });
     } catch (err) {

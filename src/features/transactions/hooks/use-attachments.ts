@@ -5,6 +5,7 @@ import {
   deleteAttachment,
   getAttachmentsByTransactionId,
 } from "@/lib/db/repositories/attachments.repo";
+import { trackEvent } from "@/lib/analytics";
 import type { Attachment } from "@/types";
 
 export const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB per file
@@ -65,13 +66,20 @@ export function useAttachments(workspaceId: string, transactionId: string | null
   const addFiles = useCallback(
     async (files: FileList | File[]) => {
       let count = totalCount;
-      for (const file of Array.from(files)) {
+      const selected = Array.from(files);
+      const acceptedMimeTypes = new Set<string>();
+      let acceptedCount = 0;
+      let acceptedSize = 0;
+      for (const file of selected) {
         const error = validateFile(file, count);
         if (error) {
           toast.error(error);
           continue;
         }
         count++;
+        acceptedCount++;
+        acceptedSize += file.size;
+        acceptedMimeTypes.add(file.type);
         if (transactionId) {
           await createAttachment({
             id: crypto.randomUUID(),
@@ -88,6 +96,16 @@ export function useAttachments(workspaceId: string, transactionId: string | null
         }
       }
       if (transactionId) await reload();
+      if (selected.length > 0) {
+        trackEvent("receipt_attached", {
+          acceptedCount,
+          rejectedCount: selected.length - acceptedCount,
+          mimeType: Array.from(acceptedMimeTypes).join(","),
+          size: acceptedSize,
+          isStaged: !transactionId,
+          totalCount: count,
+        });
+      }
     },
     [workspaceId, transactionId, totalCount, reload]
   );

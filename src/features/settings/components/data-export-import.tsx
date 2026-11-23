@@ -8,6 +8,7 @@ import { getCategoriesByWorkspaceId } from "@/lib/db/repositories/categories.rep
 import { getGoalsByWorkspaceId, createGoal } from "@/lib/db/repositories/goals.repo";
 import { getBudgetsByWorkspaceId, upsertBudget } from "@/lib/db/repositories/budgets.repo";
 import { useAuthContext } from "@/features/auth/hooks/auth-context";
+import { trackEvent } from "@/lib/analytics";
 import type { Budget, Goal, Transaction } from "@/types";
 
 export function DataExportImport() {
@@ -30,6 +31,13 @@ export function DataExportImport() {
       const data = { workspace, transactions, categories, goals, budgets, exportedAt: new Date().toISOString() };
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       downloadBlob(blob, `expense-tracker-export-${new Date().toISOString().slice(0, 10)}.json`);
+      trackEvent("data_export_completed", {
+        format: "json",
+        transactionCount: transactions.length,
+        categoryCount: categories.length,
+        goalCount: goals.length,
+        budgetCount: budgets.length,
+      });
       toast.success("Exported successfully");
     } catch {
       toast.error("Export failed");
@@ -61,6 +69,11 @@ export function DataExportImport() {
       const csv = [header.join(","), ...rows.map((r) => r.join(","))].join("\n");
       const blob = new Blob([csv], { type: "text/csv" });
       downloadBlob(blob, `transactions-${new Date().toISOString().slice(0, 10)}.csv`);
+      trackEvent("data_export_completed", {
+        format: "csv",
+        transactionCount: transactions.length,
+        categoryCount: categories.length,
+      });
       toast.success("CSV exported successfully");
     } catch {
       toast.error("CSV export failed");
@@ -74,6 +87,12 @@ export function DataExportImport() {
     if (!file || !workspace) return;
     setIsImporting(true);
 
+    // Hoisted so a failed import still reports how far it got.
+    let imported = 0;
+    let extras = 0;
+    let hasGoals = false;
+    let hasBudgets = false;
+
     try {
       const text = await file.text();
       const data = JSON.parse(text) as {
@@ -84,7 +103,9 @@ export function DataExportImport() {
 
       if (!Array.isArray(data.transactions)) throw new Error("Invalid format: missing transactions array");
 
-      let imported = 0;
+      hasGoals = Array.isArray(data.goals);
+      hasBudgets = Array.isArray(data.budgets);
+
       for (const tx of data.transactions) {
         const fresh: Transaction = {
           ...tx,
@@ -98,7 +119,6 @@ export function DataExportImport() {
       }
 
       // Optional sections from newer exports; older files simply lack them.
-      let extras = 0;
       if (Array.isArray(data.goals)) {
         for (const goal of data.goals) {
           await createGoal({
@@ -122,7 +142,26 @@ export function DataExportImport() {
           extras > 0 ? ` and ${extras} goal${extras !== 1 ? "s" : ""}/budget${extras !== 1 ? "s" : ""}` : ""
         }`
       );
+      trackEvent("data_import_completed", {
+        success: true,
+        transactionsImported: imported,
+        extrasImported: extras,
+        hasGoals,
+        hasBudgets,
+        fileSize: file.size,
+      });
     } catch (err) {
+      trackEvent("data_import_completed", {
+        success: false,
+        transactionsImported: imported,
+        extrasImported: extras,
+        hasGoals,
+        hasBudgets,
+        fileSize: file.size,
+        // JSON parse messages can quote file contents, so report only a generic label for them.
+        errorMessage:
+          err instanceof SyntaxError ? "Invalid JSON" : err instanceof Error ? err.message.slice(0, 100) : "Import failed",
+      });
       toast.error(err instanceof Error ? err.message : "Import failed — check the file format");
     } finally {
       setIsImporting(false);

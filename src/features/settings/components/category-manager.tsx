@@ -24,6 +24,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { createCategory, deleteCategory, updateCategory } from "@/lib/db/repositories/categories.repo";
 import { useAuthContext } from "@/features/auth/hooks/auth-context";
+import { trackEvent } from "@/lib/analytics";
 import { useCategories } from "../hooks/use-settings";
 import type { Category, CategoryScope } from "@/types";
 
@@ -158,6 +159,11 @@ export function CategoryManager() {
         isDefault: false,
       };
       await createCategory(cat);
+      trackEvent("category_created", {
+        scope: cat.scope,
+        usedPresetColor: PRESET_COLORS.includes(cat.color.toLowerCase()),
+        customCategoryCount: categories.filter((c) => !c.isDefault).length + 1,
+      });
       await reload();
       setShowForm(false);
       toast.success("Category added");

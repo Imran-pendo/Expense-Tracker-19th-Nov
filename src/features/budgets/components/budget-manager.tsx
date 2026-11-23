@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/format";
+import { trackEvent } from "@/lib/analytics";
 import { useAuthContext } from "@/features/auth/hooks/auth-context";
 import { useBudgets } from "../hooks/use-budgets";
 import type { Category } from "@/types";
@@ -35,6 +36,12 @@ function BudgetRowForm({ category, currentLimit, currency, locale, onSave, onCle
     setIsSaving(true);
     try {
       await onSave(category.id, parsed);
+      trackEvent("budget_saved", {
+        categoryId: category.id,
+        monthlyLimit: parsed,
+        previousLimit: currentLimit,
+        isNewBudget: currentLimit === null,
+      });
       toast.success(`Budget set for ${category.name}`);
     } catch {
       toast.error("Failed to save budget");

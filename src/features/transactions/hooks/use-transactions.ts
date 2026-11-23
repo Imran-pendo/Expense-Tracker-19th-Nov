@@ -10,13 +10,18 @@ import { getCategoriesByWorkspaceId } from "@/lib/db/repositories/categories.rep
 import { getBudgetsByWorkspaceId } from "@/lib/db/repositories/budgets.repo";
 import { checkBudgetThresholds } from "@/features/budgets/lib/budget-alerts";
 import { useDataChanged } from "@/shared/lib/data-events";
+import { trackEvent } from "@/lib/analytics";
 import type { Category, Transaction } from "@/types";
+
+/** Where the write that triggered a budget check came from. */
+export type BudgetCheckSource = "transaction_add" | "transaction_edit" | "quick_add";
 
 export async function notifyBudgetThreshold(
   workspaceId: string,
   tx: Pick<Transaction, "type" | "categoryId" | "amount" | "date">,
   priorTransactions: Transaction[],
-  categories: Category[]
+  categories: Category[],
+  source: BudgetCheckSource
 ): Promise<void> {
   if (tx.type !== "expense") return;
   const budgets = await getBudgetsByWorkspaceId(workspaceId);
@@ -24,6 +29,14 @@ export async function notifyBudgetThreshold(
   if (!alert) return;
   const categoryName = categories.find((c) => c.id === alert.categoryId)?.name ?? "Category";
   const percent = Math.round((alert.spent / alert.monthlyLimit) * 100);
+  trackEvent("budget_threshold_crossed", {
+    level: alert.level,
+    categoryId: alert.categoryId,
+    percent,
+    spent: alert.spent,
+    monthlyLimit: alert.monthlyLimit,
+    source,
+  });
   if (alert.level === "over") {
     toast.error(`Budget exceeded: ${categoryName} is at ${percent}% of its monthly limit`);
   } else {
@@ -87,7 +100,7 @@ export function useTransactions(workspaceId: string): UseTransactionsReturn {
       const now = new Date().toISOString();
       const full: Transaction = { ...tx, id: crypto.randomUUID(), createdAt: now, updatedAt: now };
       await createTransaction(full);
-      await notifyBudgetThreshold(workspaceId, full, transactions, categories);
+      await notifyBudgetThreshold(workspaceId, full, transactions, categories, "transaction_add");
       await reload();
       return full;
     },
@@ -100,7 +113,7 @@ export function useTransactions(workspaceId: string): UseTransactionsReturn {
       await updateTransaction(updated);
       // Exclude the pre-edit version so the threshold check sees the change.
       const priorWithoutTx = transactions.filter((t) => t.id !== tx.id);
-      await notifyBudgetThreshold(workspaceId, updated, priorWithoutTx, categories);
+      await notifyBudgetThreshold(workspaceId, updated, priorWithoutTx, categories, "transaction_edit");
       await reload();
     },
     [workspaceId, transactions, categories, reload]
